@@ -1,0 +1,1982 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>比特币 · 黄金 实时看板</title>
+<style>
+/* ── 设计令牌 ────────────────────────────────────────────────────────────
+   配色取自已校验的数据可视化调色板。
+   序列色：比特币=蓝 #2a78d6，黄金=黄 #eda100。
+   这一组合在明暗两种模式下的色觉障碍分离度 ΔE 为 31.5 / 27.4（门槛 8），
+   常规视觉 37.5 / 30.7（门槛 15），是全表分离度最高的一对。
+   直觉上的「BTC 橙 + 黄金黄」在暗色模式下 ΔE 仅 4.8，硬性不合格，故未采用。
+   ──────────────────────────────────────────────────────────────────── */
+:root {
+  color-scheme: light;
+  --bg:            #f4f4f1;
+  --surface-1:     #fcfcfb;
+  --surface-2:     #f0efec;
+  --border:        #e3e2dd;
+  --border-strong: #d3d2cc;
+
+  --text-primary:   #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted:     #7c7a73;
+
+  --series-btc:  #2a78d6;
+  --series-gold: #eda100;
+  --seq-1:       #2a78d6;
+  --div-pos:     #2a78d6;
+  --div-neg:     #e34948;
+  --div-mid:     #f0efec;
+
+  --good:     #0ca30c;
+  --warning:  #fab219;
+  --serious:  #ec835a;
+  --critical: #d03b3b;
+
+  --grid:      rgba(11, 11, 11, .08);
+  --grid-axis: rgba(11, 11, 11, .18);
+  --shadow:    0 1px 2px rgba(11,11,11,.05), 0 8px 24px -16px rgba(11,11,11,.25);
+
+  --up:   #0ca30c;
+  --down: #d03b3b;
+
+  --radius: 12px;
+  --gap: 16px;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro SC", "PingFang SC", "Hiragino Sans GB",
+          "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg:            #0f0f0e;
+    --surface-1:     #1a1a19;
+    --surface-2:     #232320;
+    --border:        #2e2e2b;
+    --border-strong: #3d3d39;
+
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #8d8b82;
+
+    --series-btc:  #3987e5;
+    --series-gold: #c98500;
+    --seq-1:       #3987e5;
+    --div-pos:     #3987e5;
+    --div-neg:     #e66767;
+    --div-mid:     #383835;
+
+    --grid:      rgba(255, 255, 255, .09);
+    --grid-axis: rgba(255, 255, 255, .22);
+    --shadow:    0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+
+    --up:   #0ca30c;
+    --down: #e66767;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:            #0f0f0e;
+  --surface-1:     #1a1a19;
+  --surface-2:     #232320;
+  --border:        #2e2e2b;
+  --border-strong: #3d3d39;
+
+  --text-primary:   #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted:     #8d8b82;
+
+  --series-btc:  #3987e5;
+  --series-gold: #c98500;
+  --seq-1:       #3987e5;
+  --div-pos:     #3987e5;
+  --div-neg:     #e66767;
+  --div-mid:     #383835;
+
+  --grid:      rgba(255, 255, 255, .09);
+  --grid-axis: rgba(255, 255, 255, .22);
+  --shadow:    0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+
+  --up:   #0ca30c;
+  --down: #e66767;
+}
+
+/* ── 基础 ───────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; overflow-x: clip; }
+body {
+  margin: 0;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.55;
+  max-width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
+p { margin: 0; }
+/* figure 在浏览器默认样式里带 1em 40px 外边距，会把栅格里的图表卡片挤窄 80px */
+figure, figcaption { margin: 0; }
+
+/* ── 页头 ───────────────────────────────────────────────────────────── */
+.site-header {
+  position: sticky; top: 0; z-index: 30;
+  display: flex; flex-wrap: wrap; gap: 12px;
+  align-items: center; justify-content: space-between;
+  padding: 14px clamp(16px, 3vw, 32px);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+.brand h1 { font-size: 17px; }
+.brand-sub { color: var(--text-muted); font-size: 12px; }
+.header-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.live { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-secondary); }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex: none; }
+.live-dot[data-state="live"]       { background: var(--good); box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 70%, transparent); animation: pulse 2.4s infinite; }
+.live-dot[data-state="connecting"] { background: var(--warning); }
+.live-dot[data-state="down"]       { background: var(--critical); }
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 55%, transparent); }
+  70%  { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none !important; } }
+
+.seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
+.seg button {
+  border: 0; background: transparent; color: var(--text-secondary);
+  font: inherit; font-size: 12px; padding: 4px 11px; border-radius: 6px; cursor: pointer;
+}
+.seg button.is-on { background: var(--surface-1); color: var(--text-primary); box-shadow: var(--shadow); font-weight: 600; }
+.btn {
+  border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary);
+  font: inherit; font-size: 12px; padding: 5px 11px; border-radius: 8px; cursor: pointer;
+}
+.btn:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.btn[aria-pressed="true"] { background: var(--text-primary); color: var(--bg); border-color: var(--text-primary); }
+.seg button:focus-visible, .btn:focus-visible { outline: 2px solid var(--seq-1); outline-offset: 2px; }
+
+/* ── 版面 ───────────────────────────────────────────────────────────── */
+main { padding: 0 clamp(16px, 3vw, 32px) 8px; max-width: 1560px; margin: 0 auto; }
+.section { margin: 30px 0 38px; }
+.section-head { margin-bottom: 14px; max-width: 78ch; }
+.section-head h2 { font-size: 15px; letter-spacing: .04em; text-transform: none; }
+.section-head h2::before {
+  content: ""; display: inline-block; width: 3px; height: 13px; margin-right: 8px;
+  background: var(--seq-1); border-radius: 2px; vertical-align: -1px;
+}
+.section-note { color: var(--text-muted); font-size: 12.5px; margin-top: 5px; }
+
+.kpi-row { display: grid; gap: var(--gap); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.chart-grid { display: grid; gap: var(--gap); grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); margin-bottom: var(--gap); }
+.card-wide { grid-column: 1 / -1; }
+@media (max-width: 640px) { .chart-grid { grid-template-columns: 1fr; } }
+
+/* ── 卡片 ───────────────────────────────────────────────────────────── */
+.tile, .card {
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.tile { padding: 14px 16px 12px; display: flex; flex-direction: column; min-width: 0; }
+.tile-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.tile-head h3 { font-size: 12.5px; color: var(--text-secondary); font-weight: 500; }
+.ticker { color: var(--text-muted); font-size: 11px; font-family: var(--mono); }
+.src {
+  font-size: 10px; color: var(--text-muted); background: var(--surface-2);
+  border-radius: 4px; padding: 1px 6px; white-space: nowrap; flex: none;
+}
+.tile-value { font-size: 25px; font-weight: 600; letter-spacing: -.02em; font-family: var(--mono); }
+.hero-value { font-size: 33px; font-weight: 650; letter-spacing: -.025em; font-family: var(--mono); line-height: 1.15; }
+.tile-value.is-stale, .hero-value.is-stale { color: var(--text-muted); }
+.tile-foot { color: var(--text-muted); font-size: 11.5px; margin-top: auto; padding-top: 8px; line-height: 1.45; }
+
+.delta { font-size: 12.5px; font-weight: 600; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-top: 3px; min-height: 20px; }
+.delta[data-dir="up"]   { color: var(--up); }
+.delta[data-dir="down"] { color: var(--down); }
+.delta[data-dir="flat"] { color: var(--text-muted); }
+.delta .arrow { font-size: 10px; }
+.delta .sub { color: var(--text-muted); font-weight: 400; }
+
+.tile-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; margin-top: 4px; min-height: 20px; }
+.tile-tag .chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  border-radius: 999px; padding: 1px 9px; font-size: 11.5px; font-weight: 600;
+  border: 1px solid currentColor;
+}
+.chip[data-tone="good"]     { color: var(--good); }
+.chip[data-tone="warning"]  { color: var(--warning); }
+.chip[data-tone="serious"]  { color: var(--serious); }
+.chip[data-tone="critical"] { color: var(--critical); }
+.chip[data-tone="neutral"]  { color: var(--text-muted); }
+
+.spark { height: 40px; margin-top: 10px; }
+
+/* ── 图表卡片 ──────────────────────────────────────────────────────── */
+.card { padding: 14px 16px 12px; display: flex; flex-direction: column; min-width: 0; }
+.card figcaption { margin-bottom: 10px; }
+.card figcaption h3 { font-size: 13.5px; }
+.card figcaption p { color: var(--text-muted); font-size: 11.5px; margin-top: 3px; }
+.chart { position: relative; height: 200px; min-width: 0; }
+.chart-tall { height: 280px; }
+.gauge { height: 180px; position: relative; }
+.card-gauge { align-items: stretch; }
+.gauge-legend { display: flex; justify-content: space-around; gap: 8px; font-size: 11.5px; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 9px; margin-top: 4px; }
+.gauge-legend b { color: var(--text-secondary); font-family: var(--mono); font-weight: 600; }
+
+svg.viz { display: block; width: 100%; height: 100%; overflow: visible; }
+.viz .grid-line { stroke: var(--grid); stroke-width: 1; }
+.viz .axis-line  { stroke: var(--grid-axis); stroke-width: 1; }
+.viz .tick-text  { fill: var(--text-muted); font-size: 10px; font-family: var(--font); }
+.viz .series-line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.viz .end-label { font-size: 11px; font-weight: 600; font-family: var(--font); fill: var(--text-primary); }
+.viz .end-dot { stroke: var(--surface-1); stroke-width: 2; }
+.viz .hover-line { stroke: var(--grid-axis); stroke-width: 1; stroke-dasharray: 3 3; }
+.viz .hover-dot { stroke: var(--surface-1); stroke-width: 2; }
+.viz .band { fill: var(--grid); }
+.viz .zero-line { stroke: var(--grid-axis); stroke-width: 1; }
+
+.chart-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; font-size: 11.5px; color: var(--text-secondary); }
+.chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-legend i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
+.tooltip {
+  position: absolute; pointer-events: none; opacity: 0; transition: opacity .1s;
+  background: var(--surface-1); border: 1px solid var(--border-strong);
+  border-radius: 8px; padding: 7px 10px; box-shadow: var(--shadow);
+  font-size: 11.5px; white-space: nowrap; z-index: 10; color: var(--text-primary);
+}
+.tooltip .tt-t { color: var(--text-muted); font-size: 10.5px; margin-bottom: 3px; }
+.tooltip .tt-row { display: flex; align-items: center; gap: 6px; }
+.tooltip .tt-row i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.tooltip .tt-row b { font-family: var(--mono); font-weight: 600; margin-left: auto; padding-left: 12px; }
+
+.chart-note { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+.chart-empty {
+  display: flex; align-items: center; justify-content: center; height: 100%;
+  color: var(--text-muted); font-size: 12px; text-align: center; padding: 0 12px;
+}
+
+/* ── 数据表（无障碍备用视图） ──────────────────────────────────────── */
+.data-table { display: none; margin-top: 10px; max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+body.show-tables .data-table { display: block; }
+.data-table table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+.data-table th, .data-table td { padding: 4px 9px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.data-table th { position: sticky; top: 0; background: var(--surface-2); color: var(--text-secondary); font-weight: 600; z-index: 1; }
+.data-table td:first-child, .data-table th:first-child { text-align: left; font-family: var(--font); color: var(--text-secondary); }
+.data-table td { font-family: var(--mono); }
+
+/* ── 数据源状态 ────────────────────────────────────────────────────── */
+.status-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.status-item {
+  display: flex; align-items: center; gap: 8px; font-size: 11.5px;
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 8px; padding: 7px 11px;
+}
+.status-item .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--text-muted); }
+.status-item[data-ok="1"] .dot { background: var(--good); }
+.status-item[data-ok="0"] .dot { background: var(--critical); }
+.status-item .name { color: var(--text-secondary); }
+.status-item .age { margin-left: auto; color: var(--text-muted); font-family: var(--mono); }
+
+/* ── 页脚 ───────────────────────────────────────────────────────────── */
+.site-footer {
+  border-top: 1px solid var(--border); margin-top: 34px;
+  padding: 20px clamp(16px, 3vw, 32px) 36px;
+  color: var(--text-muted); font-size: 11.5px; line-height: 1.7;
+  max-width: 1560px; margin-inline: auto;
+}
+.site-footer p + p { margin-top: 8px; }
+.site-footer strong { color: var(--text-secondary); }
+.disclaimer { color: var(--text-muted); font-style: normal; opacity: .85; }
+
+/* 数值刷新时的轻微高亮 */
+@keyframes flash-up   { from { background: color-mix(in srgb, var(--up) 22%, transparent); } to { background: transparent; } }
+@keyframes flash-down { from { background: color-mix(in srgb, var(--down) 22%, transparent); } to { background: transparent; } }
+.flash-up   { animation: flash-up .6s ease-out; border-radius: 4px; }
+.flash-down { animation: flash-down .6s ease-out; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) { .flash-up, .flash-down { animation: none; } }
+
+</style>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="brand">
+    <h1>比特币 · 黄金 实时看板</h1>
+    <p class="brand-sub">资金流入 · 市场信心 · 宏观与相对表现</p>
+  </div>
+  <div class="header-controls">
+    <div class="live" id="liveStatus" role="status" aria-live="polite">
+      <span class="live-dot" data-state="connecting"></span>
+      <span class="live-text">连接中…</span>
+    </div>
+    <div class="seg" id="rangeCtl" role="group" aria-label="历史区间">
+      <button type="button" data-days="7">7天</button>
+      <button type="button" data-days="30" class="is-on">30天</button>
+      <button type="button" data-days="90">90天</button>
+    </div>
+    <button type="button" class="btn" id="tableToggle" aria-pressed="false">数据表</button>
+    <button type="button" class="btn" id="themeToggle" aria-label="切换深浅色">深浅</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ══ 核心行情 ══ -->
+  <section class="section" id="sec-core">
+    <div class="section-head">
+      <h2>核心行情</h2>
+      <p class="section-note">价格经 Binance WebSocket 实时推送，黄金现货每 60 秒刷新</p>
+    </div>
+    <div class="kpi-row">
+
+      <article class="tile tile-hero">
+        <div class="tile-head"><h3>比特币 <span class="ticker">BTC/USD</span></h3><span class="src" data-src="ws">实时</span></div>
+        <div class="hero-value" data-f="btc.price">—</div>
+        <div class="delta" data-f="btc.delta">—</div>
+        <div class="spark" data-spark="btc"></div>
+        <div class="tile-foot"><span data-f="btc.range">—</span></div>
+      </article>
+
+      <article class="tile tile-hero">
+        <div class="tile-head"><h3>黄金现货 <span class="ticker">XAU/USD</span></h3><span class="src" data-src="gold">60秒</span></div>
+        <div class="hero-value" data-f="gold.price">—</div>
+        <div class="delta" data-f="gold.delta">—</div>
+        <div class="spark" data-spark="gold"></div>
+        <div class="tile-foot"><span data-f="gold.range">—</span></div>
+      </article>
+
+      <article class="tile">
+        <div class="tile-head"><h3>BTC / 黄金 比价</h3><span class="src">盎司</span></div>
+        <div class="tile-value" data-f="ratio.value">—</div>
+        <div class="delta" data-f="ratio.delta">—</div>
+        <div class="spark" data-spark="ratio"></div>
+        <div class="tile-foot">1 枚比特币可兑换的黄金盎司数</div>
+      </article>
+
+      <article class="tile">
+        <div class="tile-head"><h3>金银比</h3><span class="src">XAU/XAG</span></div>
+        <div class="tile-value" data-f="gsr.value">—</div>
+        <div class="tile-tag" data-f="gsr.tag">—</div>
+        <div class="tile-foot">经典避险温度计：比值走高＝避险情绪升温，白银工业需求疲弱</div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ══ 资金流入 ══ -->
+  <section class="section" id="sec-flow">
+    <div class="section-head">
+      <h2>资金流入</h2>
+      <p class="section-note">
+        现货 ETF 申赎数据没有免费公开接口，这里用四个可实时验证的代理指标替代：
+        稳定币净增（新入场法币）、Coinbase 溢价（美国买盘）、期货未平仓合约（杠杆资金）、主动买入比（现货买压）。
+      </p>
+    </div>
+
+    <div class="kpi-row">
+      <article class="tile">
+        <div class="tile-head"><h3>稳定币总市值</h3><span class="src" data-src="cg">5分钟</span></div>
+        <div class="tile-value" data-f="stable.total">—</div>
+        <div class="delta" data-f="stable.delta">—</div>
+        <div class="tile-foot">USDT + USDC + DAI + USDe　—　加密市场的「干火药」</div>
+      </article>
+
+      <article class="tile">
+        <div class="tile-head"><h3>Coinbase 溢价</h3><span class="src" data-src="cbp">10秒</span></div>
+        <div class="tile-value" data-f="cbp.value">—</div>
+        <div class="tile-tag" data-f="cbp.tag">—</div>
+        <div class="tile-foot">Coinbase 与 Binance 的 BTC 价差；为正代表美国资金买盘更强</div>
+      </article>
+
+      <article class="tile">
+        <div class="tile-head"><h3>期货未平仓合约</h3><span class="src" data-src="oi">30秒</span></div>
+        <div class="tile-value" data-f="oi.value">—</div>
+        <div class="delta" data-f="oi.delta">—</div>
+        <div class="tile-foot" data-f="oi.coins">—</div>
+      </article>
+
+      <article class="tile">
+        <div class="tile-head"><h3>代币化黄金溢价</h3><span class="src" data-src="paxg">10秒</span></div>
+        <div class="tile-value" data-f="paxg.value">—</div>
+        <div class="tile-tag" data-f="paxg.tag">—</div>
+        <div class="tile-foot">PAXG 相对伦敦金现货的价差，反映链上黄金需求</div>
+      </article>
+    </div>
+
+    <div class="chart-grid">
+      <figure class="card" id="fig-stable">
+        <figcaption>
+          <h3>稳定币总市值走势</h3>
+          <p>USDT + USDC 合计。持续上行＝场外资金净流入加密市场</p>
+        </figcaption>
+        <div class="chart" data-chart="stable"></div>
+      </figure>
+
+      <figure class="card" id="fig-oi">
+        <figcaption>
+          <h3>比特币期货未平仓合约</h3>
+          <p>Binance USDT 永续名义金额。价涨 + OI 涨＝新多头资金进场</p>
+        </figcaption>
+        <div class="chart" data-chart="oi"></div>
+      </figure>
+
+      <figure class="card" id="fig-taker">
+        <figcaption>
+          <h3>主动买卖量比</h3>
+          <p>吃单买量 ÷ 吃单卖量，逐小时。高于 1（基准线上方）＝买方主动性更强</p>
+        </figcaption>
+        <div class="chart" data-chart="taker"></div>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ══ 市场信心 ══ -->
+  <section class="section" id="sec-sentiment">
+    <div class="section-head">
+      <h2>市场信心</h2>
+      <p class="section-note">情绪指数 · 杠杆成本 · 仓位分布</p>
+    </div>
+
+    <div class="chart-grid">
+      <figure class="card card-gauge" id="fig-fng">
+        <figcaption>
+          <h3>恐惧与贪婪指数</h3>
+          <p>0＝极度恐惧，100＝极度贪婪。综合波动率、成交量、社交热度、市场占比等</p>
+        </figcaption>
+        <div class="gauge" data-chart="fngGauge"></div>
+        <div class="gauge-legend">
+          <span data-f="fng.yesterday">昨日 —</span>
+          <span data-f="fng.week">上周 —</span>
+          <span data-f="fng.month">上月 —</span>
+        </div>
+      </figure>
+
+      <figure class="card" id="fig-fnghist">
+        <figcaption>
+          <h3>恐惧贪婪指数走势</h3>
+          <p>灰色带为中性区间（45–55）</p>
+        </figcaption>
+        <div class="chart" data-chart="fngHist"></div>
+      </figure>
+
+      <figure class="card" id="fig-funding">
+        <figcaption>
+          <h3>永续合约资金费率（年化）</h3>
+          <p>每 8 小时结算一次。为正＝多头付钱给空头，多头情绪占优；深度为负常见于恐慌底部</p>
+        </figcaption>
+        <div class="chart" data-chart="funding"></div>
+      </figure>
+
+      <figure class="card card-wide" id="fig-lsr">
+        <figcaption>
+          <h3>全网多空账户比</h3>
+          <p>持多单账户数 ÷ 持空单账户数，逐小时</p>
+        </figcaption>
+        <div class="chart" data-chart="lsr"></div>
+      </figure>
+    </div>
+
+    <div class="kpi-row">
+      <article class="tile">
+        <div class="tile-head"><h3>当前资金费率</h3><span class="src" data-src="fund">30秒</span></div>
+        <div class="tile-value" data-f="funding.value">—</div>
+        <div class="tile-tag" data-f="funding.tag">—</div>
+        <div class="tile-foot" data-f="funding.next">—</div>
+      </article>
+
+      <article class="tile">
+        <div class="tile-head"><h3>大户持仓多空比</h3><span class="src" data-src="tlsr">60秒</span></div>
+        <div class="tile-value" data-f="tlsr.value">—</div>
+        <div class="tile-tag" data-f="tlsr.tag">—</div>
+        <div class="tile-foot">Binance 前 20% 保证金账户的持仓方向，常被视作「聪明钱」</div>
+      </article>
+
+      <article class="tile">
+        <div class="tile-head"><h3>加密总市值</h3><span class="src" data-src="cg">5分钟</span></div>
+        <div class="tile-value" data-f="mcap.value">—</div>
+        <div class="delta" data-f="mcap.delta">—</div>
+        <div class="tile-foot" data-f="mcap.vol">—</div>
+      </article>
+
+      <article class="tile">
+        <div class="tile-head"><h3>比特币市值占比</h3><span class="src" data-src="cg">5分钟</span></div>
+        <div class="tile-value" data-f="dom.value">—</div>
+        <div class="tile-tag" data-f="dom.tag">—</div>
+        <div class="tile-foot">占比上行＝资金向比特币避险，山寨币承压</div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ══ 相对表现与宏观 ══ -->
+  <section class="section" id="sec-macro">
+    <div class="section-head">
+      <h2>相对表现与宏观</h2>
+      <p class="section-note">两类资产的共同分母是美元与实际利率，这里对比它们的走势、波动与联动</p>
+    </div>
+
+    <div class="chart-grid">
+      <figure class="card card-wide" id="fig-perf">
+        <figcaption>
+          <h3>归一化表现对比</h3>
+          <p>区间起点统一设为 100，直接比较涨跌幅（同一纵轴，不使用双轴）</p>
+        </figcaption>
+        <div class="chart chart-tall" data-chart="perf"></div>
+      </figure>
+
+      <figure class="card" id="fig-ratio">
+        <figcaption>
+          <h3>BTC / 黄金 比价走势</h3>
+          <p>上行＝比特币跑赢黄金，风险偏好回升</p>
+        </figcaption>
+        <div class="chart" data-chart="ratioHist"></div>
+      </figure>
+
+      <figure class="card" id="fig-vol">
+        <figcaption>
+          <h3>30 日已实现波动率（年化）</h3>
+          <p>日对数收益率标准差年化。数值越高，持仓风险越大</p>
+        </figcaption>
+        <div class="chart" data-chart="vol"></div>
+      </figure>
+
+      <figure class="card" id="fig-dxy">
+        <figcaption>
+          <h3>美元指数 DXY（合成）</h3>
+          <p>按 ICE 官方权重用欧洲央行日终汇率复算。美元走强通常同时压制金价与币价</p>
+        </figcaption>
+        <div class="chart" data-chart="dxy"></div>
+      </figure>
+    </div>
+
+    <div class="kpi-row">
+      <article class="tile">
+        <div class="tile-head"><h3>BTC 与黄金相关性</h3><span class="src">滚动</span></div>
+        <div class="tile-value" data-f="corr.value">—</div>
+        <div class="tile-tag" data-f="corr.tag">—</div>
+        <div class="tile-foot">日收益率皮尔逊相关系数。接近 0＝两者各走各路，分散风险有效</div>
+      </article>
+
+      <article class="tile">
+        <div class="tile-head"><h3>比特币波动率</h3><span class="src">30日年化</span></div>
+        <div class="tile-value" data-f="vol.btc">—</div>
+        <div class="tile-foot">相对黄金的倍数：<span data-f="vol.mult">—</span></div>
+      </article>
+
+      <article class="tile">
+        <div class="tile-head"><h3>黄金波动率</h3><span class="src">30日年化</span></div>
+        <div class="tile-value" data-f="vol.gold">—</div>
+        <div class="tile-foot">以 PAXG 连续报价计算，可 7×24 小时观测</div>
+      </article>
+
+      <article class="tile">
+        <div class="tile-head"><h3>全网算力</h3><span class="src" data-src="hash">5分钟</span></div>
+        <div class="tile-value" data-f="hash.value">—</div>
+        <div class="delta" data-f="hash.delta">—</div>
+        <div class="tile-foot">矿工投入的算力，是比特币网络最硬的基本面信号</div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ══ 数据源状态 ══ -->
+  <section class="section" id="sec-status">
+    <div class="section-head">
+      <h2>数据源状态</h2>
+      <p class="section-note">每个数据源的最近一次成功拉取时间；失败会自动退避重试</p>
+    </div>
+    <div class="status-grid" id="statusGrid"></div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <p><strong>数据来源</strong>：Binance 现货与合约公开接口、Coinbase Exchange、alternative.me 恐惧贪婪指数、CoinGecko、gold-api.com 贵金属现货、mempool.space、Frankfurter（欧洲央行汇率）。全部为公开免费接口，浏览器直连，无服务端、无密钥。</p>
+  <p><strong>已知口径限制</strong>：① 现货 ETF 申赎流向（Farside / SoSoValue）无免费接口，本看板以稳定币净增、Coinbase 溢价、未平仓合约、主动买入比作为资金流代理，不等同于 ETF 净流入。② 黄金历史序列与波动率用 PAXG（代币化黄金）连续报价计算，与伦敦金定盘价存在基点级差异。③ DXY 为按 ICE 权重合成，基于欧洲央行日终汇率，每日更新一次，非盘中实时。④ 币安衍生品统计接口只保留最近 30 天，选择 90 天区间时相关图表会自动截断并标注。</p>
+  <p class="disclaimer">本页面仅用于市场数据可视化，不构成任何投资建议。</p>
+</footer>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════
+   charts.js — 零依赖 SVG 图表层
+   折线（含十字准星）／发散柱状／仪表盘／迷你走势线／无障碍数据表
+   ══════════════════════════════════════════════════════════════════ */
+(function (global) {
+  'use strict';
+
+  const SVG = 'http://www.w3.org/2000/svg';
+  const mounted = new Set();
+
+  const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+  /* ── 数值格式化 ───────────────────────────────────────────────── */
+  const Fmt = {
+    usd(v, d) {
+      if (v == null || !isFinite(v)) return '—';
+      const dec = d != null ? d : (Math.abs(v) >= 1000 ? 2 : Math.abs(v) >= 1 ? 2 : 4);
+      return '$' + v.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    },
+    // 中文数量级：万亿 / 亿 / 万
+    big(v, unit) {
+      if (v == null || !isFinite(v)) return '—';
+      const s = v < 0 ? '-' : '';
+      const a = Math.abs(v);
+      const u = unit || '';
+      if (a >= 1e12) return s + (a / 1e12).toFixed(2) + ' 万亿' + u;
+      if (a >= 1e8)  return s + (a / 1e8).toFixed(a / 1e8 >= 100 ? 0 : 1) + ' 亿' + u;
+      if (a >= 1e4)  return s + (a / 1e4).toFixed(1) + ' 万' + u;
+      return s + a.toFixed(0) + u;
+    },
+    num(v, d) {
+      if (v == null || !isFinite(v)) return '—';
+      return v.toLocaleString('en-US', { minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2 });
+    },
+    pct(v, d) {
+      if (v == null || !isFinite(v)) return '—';
+      return (v >= 0 ? '+' : '') + v.toFixed(d ?? 2) + '%';
+    },
+    pctAbs(v, d) {
+      if (v == null || !isFinite(v)) return '—';
+      return v.toFixed(d ?? 2) + '%';
+    },
+    bps(v) {
+      if (v == null || !isFinite(v)) return '—';
+      return (v >= 0 ? '+' : '') + v.toFixed(1) + ' bp';
+    },
+    day(t)  { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()}`; },
+    hour(t) { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:00`; },
+    dayHour(t) {
+      const d = new Date(t);
+      return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:00`;
+    },
+    clock(t) {
+      const d = new Date(t);
+      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+    },
+    age(ms) {
+      if (ms == null) return '—';
+      const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+      if (s < 60) return s + ' 秒前';
+      if (s < 3600) return Math.floor(s / 60) + ' 分前';
+      return Math.floor(s / 3600) + ' 小时前';
+    }
+  };
+
+  /* ── 通用工具 ─────────────────────────────────────────────────── */
+  function el(tag, attrs, parent) {
+    const n = document.createElementNS(SVG, tag);
+    for (const k in attrs) if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+
+  function niceScale(min, max, count) {
+    if (!isFinite(min) || !isFinite(max)) return { min: 0, max: 1, ticks: [0, 1] };
+    if (min === max) { min -= Math.abs(min || 1) * .05; max += Math.abs(max || 1) * .05; }
+    const raw = (max - min) / (count || 4);
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const norm = raw / mag;
+    const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) * mag;
+    const lo = Math.floor(min / step) * step;
+    const hi = Math.ceil(max / step) * step;
+    const ticks = [];
+    for (let v = lo; v <= hi + step * 1e-9; v += step) ticks.push(Math.round(v / step) * step);
+    return { min: lo, max: hi, ticks };
+  }
+
+  function debounce(fn, ms) {
+    let t; return function () { clearTimeout(t); t = setTimeout(fn, ms); };
+  }
+
+  function clear(box) {
+    box.querySelectorAll('svg.viz, .tooltip, .chart-empty').forEach(n => n.remove());
+    const holder = box.parentElement;
+    if (holder) holder.querySelectorAll(':scope > .chart-legend, :scope > .data-table, :scope > .chart-note').forEach(n => n.remove());
+  }
+
+  function empty(box, msg) {
+    clear(box);
+    const d = document.createElement('div');
+    d.className = 'chart-empty';
+    d.textContent = msg || '暂无数据';
+    box.appendChild(d);
+  }
+
+  function mount(box, opts, draw) {
+    box._opts = opts; box._draw = draw;
+    if (!box._ro) {
+      box._ro = new ResizeObserver(debounce(() => {
+        if (box._opts && box._draw && box.clientWidth > 0) box._draw(box, box._opts);
+      }, 90));
+      box._ro.observe(box);
+      mounted.add(box);
+    }
+    draw(box, opts);
+  }
+
+  function tooltipFor(box) {
+    let tip = box.querySelector('.tooltip');
+    if (!tip) { tip = document.createElement('div'); tip.className = 'tooltip'; box.appendChild(tip); }
+    return tip;
+  }
+
+  function placeTip(box, tip, x, y) {
+    const w = box.clientWidth;
+    const tw = tip.offsetWidth;
+    let left = x + 14;
+    if (left + tw > w - 4) left = x - tw - 14;
+    if (left < 0) left = 4;
+    tip.style.left = left + 'px';
+    tip.style.top = Math.max(4, y - tip.offsetHeight - 10) + 'px';
+  }
+
+  /* ── 图例 ─────────────────────────────────────────────────────── */
+  function legend(box, series) {
+    if (series.length < 2) return;                 // 单序列由标题点名，无需图例
+    const holder = box.parentElement;
+    const l = document.createElement('div');
+    l.className = 'chart-legend';
+    series.forEach(s => {
+      const sp = document.createElement('span');
+      const i = document.createElement('i');
+      i.style.background = s.color;
+      sp.appendChild(i);
+      sp.appendChild(document.createTextNode(s.name));
+      l.appendChild(sp);
+    });
+    holder.appendChild(l);
+  }
+
+  function note(box, text) {
+    if (!text) return;
+    const p = document.createElement('p');
+    p.className = 'chart-note';
+    p.textContent = text;
+    box.parentElement.appendChild(p);
+  }
+
+  /* ── 无障碍数据表 ─────────────────────────────────────────────── */
+  function table(box, cols, rows) {
+    const holder = box.parentElement;
+    const wrap = document.createElement('div');
+    wrap.className = 'data-table';
+    const t = document.createElement('table');
+    const thead = document.createElement('thead');
+    const htr = document.createElement('tr');
+    cols.forEach(c => { const th = document.createElement('th'); th.textContent = c; htr.appendChild(th); });
+    thead.appendChild(htr); t.appendChild(thead);
+    const tb = document.createElement('tbody');
+    rows.forEach(r => {
+      const tr = document.createElement('tr');
+      r.forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb); wrap.appendChild(t); holder.appendChild(wrap);
+  }
+
+  /* ══ 折线图 ══════════════════════════════════════════════════════
+     opts: {
+       series:[{name,color,points:[[t,v]…]}],
+       yFormat(v), tipFormat(v), xFormat(t),
+       band:{from,to}, baseline:number, note, maxTicks
+     }
+     ═════════════════════════════════════════════════════════════ */
+  function drawLine(box, o) {
+    const S = (o.series || []).filter(s => s && s.points && s.points.length > 1);
+    if (!S.length) { empty(box, o.emptyText); return; }
+    clear(box);
+
+    const W = box.clientWidth, H = box.clientHeight;
+    if (W < 40 || H < 40) return;
+    const yFmt = o.yFormat || (v => Fmt.num(v, 0));
+    const tFmt = o.tipFormat || yFmt;
+    const xFmt = o.xFormat || Fmt.day;
+
+    // 末端直接标注需要右侧留白
+    const padR = o.endLabels === false ? 12 : 52;
+    const pad = { t: 12, r: padR, b: 22, l: 48 };
+    const iw = Math.max(10, W - pad.l - pad.r), ih = Math.max(10, H - pad.t - pad.b);
+
+    let tMin = Infinity, tMax = -Infinity, vMin = Infinity, vMax = -Infinity;
+    S.forEach(s => s.points.forEach(([t, v]) => {
+      if (t < tMin) tMin = t; if (t > tMax) tMax = t;
+      if (v < vMin) vMin = v; if (v > vMax) vMax = v;
+    }));
+    if (o.baseline != null) { vMin = Math.min(vMin, o.baseline); vMax = Math.max(vMax, o.baseline); }
+    if (o.band) { vMin = Math.min(vMin, o.band.from); vMax = Math.max(vMax, o.band.to); }
+
+    const sc = niceScale(vMin, vMax, 4);
+    const X = t => pad.l + (tMax === tMin ? iw / 2 : (t - tMin) / (tMax - tMin) * iw);
+    const Y = v => pad.t + ih - (v - sc.min) / (sc.max - sc.min || 1) * ih;
+
+    const svg = el('svg', { class: 'viz', viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none' });
+    box.appendChild(svg);
+
+    // 中性区间带
+    if (o.band) {
+      el('rect', { class: 'band', x: pad.l, y: Y(o.band.to), width: iw, height: Math.abs(Y(o.band.from) - Y(o.band.to)) }, svg);
+    }
+
+    // 网格 + 纵轴刻度
+    sc.ticks.forEach(v => {
+      const y = Y(v);
+      if (y < pad.t - 1 || y > pad.t + ih + 1) return;
+      el('line', { class: 'grid-line', x1: pad.l, y1: y, x2: pad.l + iw, y2: y }, svg);
+      el('text', { class: 'tick-text', x: pad.l - 7, y: y + 3.5, 'text-anchor': 'end' }, svg).textContent = yFmt(v);
+    });
+
+    // 基准线（如 1.0 或 0）
+    if (o.baseline != null) {
+      el('line', { class: 'zero-line', x1: pad.l, y1: Y(o.baseline), x2: pad.l + iw, y2: Y(o.baseline), 'stroke-dasharray': '4 3' }, svg);
+    }
+
+    // 横轴刻度
+    const n = S[0].points.length;
+    const want = Math.max(2, Math.min(o.maxTicks || 5, Math.floor(iw / 74)));
+    const step = Math.max(1, Math.floor((n - 1) / (want - 1)));
+    for (let i = 0; i < n; i += step) {
+      const t = S[0].points[i][0];
+      el('text', { class: 'tick-text', x: X(t), y: pad.t + ih + 15, 'text-anchor': 'middle' }, svg).textContent = xFmt(t);
+    }
+    el('line', { class: 'axis-line', x1: pad.l, y1: pad.t + ih, x2: pad.l + iw, y2: pad.t + ih }, svg);
+
+    // 数据线
+    S.forEach(s => {
+      const d = s.points.map(([t, v], i) => (i ? 'L' : 'M') + X(t).toFixed(2) + ' ' + Y(v).toFixed(2)).join(' ');
+      el('path', { class: 'series-line', d, stroke: s.color, 'stroke-dasharray': s.dash ? '5 4' : null }, svg);
+    });
+
+    // 末端直接标注（身份不靠颜色单独承担）
+    if (o.endLabels !== false) {
+      const ends = S.map(s => {
+        const p = s.points[s.points.length - 1];
+        return { s, x: X(p[0]), y: Y(p[1]), v: p[1] };
+      }).sort((a, b) => a.y - b.y);
+      for (let i = 1; i < ends.length; i++) {
+        if (ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13;
+      }
+      ends.forEach(e => {
+        el('circle', { class: 'end-dot', cx: e.x, cy: Y(e.s.points[e.s.points.length - 1][1]), r: 3.5, fill: e.s.color }, svg);
+        el('text', { class: 'end-label', x: Math.min(e.x + 8, W - 4), y: e.y + 3.5 }, svg).textContent = yFmt(e.v);
+      });
+    }
+
+    /* 十字准星 + 悬浮提示 */
+    const tip = tooltipFor(box);
+    const hLine = el('line', { class: 'hover-line', y1: pad.t, y2: pad.t + ih, opacity: 0 }, svg);
+    const dots = S.map(s => el('circle', { class: 'hover-dot', r: 4.5, fill: s.color, opacity: 0 }, svg));
+    const hit = el('rect', { x: pad.l, y: pad.t, width: iw, height: ih, fill: 'transparent', style: 'cursor:crosshair' }, svg);
+
+    const nearest = (px) => {
+      const t = tMin + (px - pad.l) / iw * (tMax - tMin);
+      let best = 0, bd = Infinity;
+      S[0].points.forEach((p, i) => { const d = Math.abs(p[0] - t); if (d < bd) { bd = d; best = i; } });
+      return best;
+    };
+
+    const onMove = (ev) => {
+      const r = box.getBoundingClientRect();
+      const px = Math.max(pad.l, Math.min(pad.l + iw, ev.clientX - r.left));
+      const i = nearest(px);
+      const t0 = S[0].points[i][0];
+      const x = X(t0);
+      hLine.setAttribute('x1', x); hLine.setAttribute('x2', x); hLine.setAttribute('opacity', 1);
+      let html = `<div class="tt-t">${(o.tipTitle || xFmt)(t0)}</div>`;
+      let topY = ih + pad.t;
+      S.forEach((s, k) => {
+        const p = s.points[i] || s.points[s.points.length - 1];
+        if (!p) { dots[k].setAttribute('opacity', 0); return; }
+        const y = Y(p[1]);
+        dots[k].setAttribute('cx', X(p[0])); dots[k].setAttribute('cy', y); dots[k].setAttribute('opacity', 1);
+        topY = Math.min(topY, y);
+        html += `<div class="tt-row"><i style="background:${s.color}"></i>${s.name}<b>${tFmt(p[1])}</b></div>`;
+      });
+      tip.innerHTML = html;
+      tip.style.opacity = 1;
+      placeTip(box, tip, x, topY);
+    };
+    const onLeave = () => {
+      tip.style.opacity = 0; hLine.setAttribute('opacity', 0);
+      dots.forEach(d => d.setAttribute('opacity', 0));
+    };
+    hit.addEventListener('pointermove', onMove);
+    hit.addEventListener('pointerleave', onLeave);
+
+    legend(box, S);
+    note(box, o.note);
+    const idx = S[0].points.map(p => p[0]);
+    table(box, ['时间'].concat(S.map(s => s.name)),
+      idx.map((t, i) => [(o.tipTitle || xFmt)(t)].concat(S.map(s => s.points[i] ? tFmt(s.points[i][1]) : '—'))).reverse());
+  }
+
+  /* ══ 发散柱状图 ══════════════════════════════════════════════════
+     opts: { points:[[t,v]…], baseline, posColor, negColor, yFormat, xFormat, note }
+     ═════════════════════════════════════════════════════════════ */
+  function drawBars(box, o) {
+    const P = (o.points || []).filter(p => isFinite(p[1]));
+    if (P.length < 2) { empty(box, o.emptyText); return; }
+    clear(box);
+    const W = box.clientWidth, H = box.clientHeight;
+    if (W < 40 || H < 40) return;
+
+    const base = o.baseline ?? 0;
+    const yFmt = o.yFormat || (v => Fmt.num(v, 2));
+    const tFmt = o.tipFormat || yFmt;            // 轴标签可以取整，提示框要保留精度
+    const xFmt = o.xFormat || Fmt.day;
+    const pad = { t: 12, r: 12, b: 22, l: 52 };
+    const iw = Math.max(10, W - pad.l - pad.r), ih = Math.max(10, H - pad.t - pad.b);
+
+    let vMin = Math.min(base, ...P.map(p => p[1]));
+    let vMax = Math.max(base, ...P.map(p => p[1]));
+    const sc = niceScale(vMin, vMax, 4);
+    const Y = v => pad.t + ih - (v - sc.min) / (sc.max - sc.min || 1) * ih;
+
+    const svg = el('svg', { class: 'viz', viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none' });
+    box.appendChild(svg);
+
+    sc.ticks.forEach(v => {
+      const y = Y(v);
+      if (y < pad.t - 1 || y > pad.t + ih + 1) return;
+      el('line', { class: 'grid-line', x1: pad.l, y1: y, x2: pad.l + iw, y2: y }, svg);
+      el('text', { class: 'tick-text', x: pad.l - 7, y: y + 3.5, 'text-anchor': 'end' }, svg).textContent = yFmt(v);
+    });
+
+    const slot = iw / P.length;
+    const bw = Math.max(2, Math.min(18, slot - 2));   // 相邻柱之间保留 2px 表面间隙
+    const y0 = Y(base);
+    const pos = o.posColor || cssVar('--div-pos');
+    const neg = o.negColor || cssVar('--div-neg');
+    const tip = tooltipFor(box);
+
+    P.forEach((p, i) => {
+      const cx = pad.l + slot * (i + .5);
+      const y = Y(p[1]);
+      const up = p[1] >= base;
+      const h = Math.max(1.5, Math.abs(y - y0));
+      const r = Math.min(4, bw / 2, h);            // 数据端 4px 圆角
+      const x = cx - bw / 2;
+      const top = up ? y : y0;
+      const d = up
+        ? `M${x} ${top + h} L${x} ${top + r} Q${x} ${top} ${x + r} ${top} L${x + bw - r} ${top} Q${x + bw} ${top} ${x + bw} ${top + r} L${x + bw} ${top + h} Z`
+        : `M${x} ${top} L${x} ${top + h - r} Q${x} ${top + h} ${x + r} ${top + h} L${x + bw - r} ${top + h} Q${x + bw} ${top + h} ${x + bw} ${top + h - r} L${x + bw} ${top} Z`;
+      const rect = el('path', { d, fill: up ? pos : neg }, svg);
+
+      const hitW = Math.max(bw, slot);
+      const hit = el('rect', { x: cx - hitW / 2, y: pad.t, width: hitW, height: ih, fill: 'transparent' }, svg);
+      hit.addEventListener('pointerenter', () => {
+        rect.setAttribute('opacity', .75);
+        tip.innerHTML = `<div class="tt-t">${(o.tipTitle || xFmt)(p[0])}</div>` +
+          `<div class="tt-row"><i style="background:${up ? pos : neg}"></i>${o.seriesName || '数值'}<b>${tFmt(p[1])}</b></div>`;
+        tip.style.opacity = 1;
+        placeTip(box, tip, cx, Math.min(y, y0));
+      });
+      hit.addEventListener('pointerleave', () => { rect.removeAttribute('opacity'); tip.style.opacity = 0; });
+    });
+
+    el('line', { class: 'axis-line', x1: pad.l, y1: y0, x2: pad.l + iw, y2: y0 }, svg);
+
+    const want = Math.max(2, Math.min(o.maxTicks || 5, Math.floor(iw / (o.tickWidth || 74))));
+    const step = Math.max(1, Math.floor((P.length - 1) / (want - 1)));
+    for (let i = 0; i < P.length; i += step) {
+      el('text', { class: 'tick-text', x: pad.l + slot * (i + .5), y: pad.t + ih + 15, 'text-anchor': 'middle' }, svg).textContent = xFmt(P[i][0]);
+    }
+
+    note(box, o.note);
+    table(box, ['时间', o.seriesName || '数值'],
+      P.map(p => [(o.tipTitle || xFmt)(p[0]), tFmt(p[1])]).reverse());
+  }
+
+  /* ══ 恐惧贪婪仪表盘（发散色带） ══════════════════════════════════ */
+  function lerpHex(a, b, t) {
+    const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+    const A = p(a), B = p(b);
+    return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join('');
+  }
+
+  function drawGauge(box, o) {
+    clear(box);
+    const W = box.clientWidth, H = box.clientHeight;
+    if (W < 60 || H < 60) return;
+    const v = o.value;
+    const svg = el('svg', { class: 'viz', viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'xMidYMid meet' });
+    box.appendChild(svg);
+
+    const cx = W / 2, cy = H * .82, R = Math.min(W * .42, H * .74), TH = Math.max(12, R * .17);
+    const ang = f => Math.PI * (1 - f);                       // 0→左，1→右
+    const pt = (f, r) => [cx + Math.cos(ang(f)) * r, cy - Math.sin(ang(f)) * r];
+    const cold = cssVar('--div-pos'), mid = cssVar('--div-mid'), hot = cssVar('--div-neg');
+
+    const SEG = 40;
+    for (let i = 0; i < SEG; i++) {
+      const f0 = i / SEG, f1 = (i + 1) / SEG - .004;
+      const m = (f0 + f1) / 2;
+      const col = m < .5 ? lerpHex(cold, mid, m / .5) : lerpHex(mid, hot, (m - .5) / .5);
+      const [x0, y0] = pt(f0, R), [x1, y1] = pt(f1, R);
+      const [x2, y2] = pt(f1, R - TH), [x3, y3] = pt(f0, R - TH);
+      el('path', {
+        d: `M${x0} ${y0} A${R} ${R} 0 0 1 ${x1} ${y1} L${x2} ${y2} A${R - TH} ${R - TH} 0 0 0 ${x3} ${y3} Z`,
+        fill: col
+      }, svg);
+    }
+
+    if (isFinite(v)) {
+      const f = Math.max(0, Math.min(1, v / 100));
+      const [mx, my] = pt(f, R + 2), [mx2, my2] = pt(f, R - TH - 4);
+      el('line', { x1: mx2, y1: my2, x2: mx, y2: my, stroke: cssVar('--surface-1'), 'stroke-width': 6, 'stroke-linecap': 'round' }, svg);
+      el('line', { x1: mx2, y1: my2, x2: mx, y2: my, stroke: cssVar('--text-primary'), 'stroke-width': 2.5, 'stroke-linecap': 'round' }, svg);
+      const [dx, dy] = pt(f, R - TH / 2);
+      el('circle', { cx: dx, cy: dy, r: 4, fill: cssVar('--text-primary'), stroke: cssVar('--surface-1'), 'stroke-width': 2 }, svg);
+    }
+
+    const val = el('text', {
+      x: cx, y: cy - R * .30, 'text-anchor': 'middle',
+      fill: cssVar('--text-primary'), 'font-size': Math.max(28, R * .46),
+      'font-weight': 650, 'font-family': cssVar('--mono') || 'monospace'
+    }, svg);
+    val.textContent = isFinite(v) ? String(v) : '—';
+
+    const lab = el('text', {
+      x: cx, y: cy - R * .30 + Math.max(18, R * .24), 'text-anchor': 'middle',
+      fill: cssVar('--text-secondary'), 'font-size': 13, 'font-family': cssVar('--font') || 'sans-serif'
+    }, svg);
+    lab.textContent = o.label || '';
+
+    el('text', { x: cx - R + TH / 2, y: cy + 16, 'text-anchor': 'middle', class: 'tick-text' }, svg).textContent = '0 极度恐惧';
+    el('text', { x: cx + R - TH / 2, y: cy + 16, 'text-anchor': 'middle', class: 'tick-text' }, svg).textContent = '极度贪婪 100';
+  }
+
+  /* ══ 迷你走势线 ═════════════════════════════════════════════════ */
+  function drawSpark(box, o) {
+    clear(box);
+    const P = (o.points || []).filter(p => isFinite(p[1]));
+    if (P.length < 2) return;
+    const W = box.clientWidth, H = box.clientHeight;
+    if (W < 20 || H < 12) return;
+    const pad = 4;
+    const vs = P.map(p => p[1]);
+    const lo = Math.min(...vs), hi = Math.max(...vs);
+    const X = i => pad + i / (P.length - 1) * (W - pad * 2);
+    const Y = v => H - pad - (v - lo) / ((hi - lo) || 1) * (H - pad * 2);
+    const svg = el('svg', { class: 'viz', viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none' });
+    box.appendChild(svg);
+    const color = o.color || cssVar('--seq-1');
+    const line = P.map((p, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(p[1]).toFixed(1)).join(' ');
+    const gid = 'sg' + Math.random().toString(36).slice(2, 8);
+    const defs = el('defs', {}, svg);
+    const lg = el('linearGradient', { id: gid, x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
+    el('stop', { offset: '0%', 'stop-color': color, 'stop-opacity': .28 }, lg);
+    el('stop', { offset: '100%', 'stop-color': color, 'stop-opacity': 0 }, lg);
+    el('path', { d: line + ` L${X(P.length - 1)} ${H} L${X(0)} ${H} Z`, fill: `url(#${gid})` }, svg);
+    el('path', { d: line, fill: 'none', stroke: color, 'stroke-width': 1.75, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+    el('circle', { cx: X(P.length - 1), cy: Y(P[P.length - 1][1]), r: 2.6, fill: color }, svg);
+  }
+
+  /* ── 对外接口 ─────────────────────────────────────────────────── */
+  global.Chart = {
+    Fmt,
+    line:  (box, o) => mount(box, o, drawLine),
+    bars:  (box, o) => mount(box, o, drawBars),
+    gauge: (box, o) => mount(box, o, drawGauge),
+    spark: (box, o) => mount(box, o, drawSpark),
+    empty,
+    redrawAll() {
+      mounted.forEach(b => { if (b._opts && b._draw && b.clientWidth > 0) b._draw(b, b._opts); });
+    }
+  };
+})(window);
+
+</script>
+<script>
+/* ══════════════════════════════════════════════════════════════════════
+   api.js — 数据接入层
+   全部为浏览器可直连（CORS 开放）的免费公开接口，不需要任何密钥。
+   每个数据源都登记状态，失败时指数退避重试，页面显示最近成功时间。
+   ══════════════════════════════════════════════════════════════════ */
+(function (global) {
+  'use strict';
+
+  const SOURCES = {};
+  const CACHE = new Map();
+
+  function reg(key, name) { SOURCES[key] = { key, name, ok: null, at: null, err: null }; return key; }
+
+  reg('binance',  'Binance 现货');
+  reg('futures',  'Binance 合约');
+  reg('coinbase', 'Coinbase Exchange');
+  reg('fng',      '恐惧贪婪指数');
+  reg('coingecko','CoinGecko');
+  reg('gold',     '贵金属现货');
+  reg('mempool',  'mempool.space');
+  reg('fx',       '欧洲央行汇率');
+
+  function mark(key, ok, err) {
+    const s = SOURCES[key];
+    if (!s) return;
+    if (ok) { s.ok = true; s.at = Date.now(); s.err = null; }
+    else { s.ok = false; s.err = err ? String(err).slice(0, 120) : '请求失败'; }
+  }
+
+  /* 带超时、TTL 缓存与并发去重的 JSON 请求 */
+  async function j(key, url, ttl) {
+    const now = Date.now();
+    if (ttl) {
+      const c = CACHE.get(url);
+      if (c && now - c.at < ttl) return c.p;
+    }
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 15000);
+    const p = fetch(url, { signal: ctl.signal, mode: 'cors', cache: 'no-store' })
+      .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(d => { mark(key, true); return d; })
+      .catch(e => { mark(key, false, e.message || e); CACHE.delete(url); throw e; })
+      .finally(() => clearTimeout(timer));
+    if (ttl) CACHE.set(url, { at: now, p });
+    return p;
+  }
+
+  const B  = 'https://api.binance.com/api/v3';
+  const F  = 'https://fapi.binance.com';
+  const CG = 'https://api.coingecko.com/api/v3';
+
+  const num = v => parseFloat(v);
+
+  const API = {
+    SOURCES,
+
+    /* ── 现货 ─────────────────────────────────────────────────── */
+    ticker24(symbol) {
+      return j('binance', `${B}/ticker/24hr?symbol=${symbol}`).then(d => ({
+        last: num(d.lastPrice), open: num(d.openPrice), high: num(d.highPrice), low: num(d.lowPrice),
+        changePct: num(d.priceChangePercent), quoteVol: num(d.quoteVolume), baseVol: num(d.volume)
+      }));
+    },
+
+    /* K 线 → [{t,o,h,l,c,quoteVol,takerBuyQuote}] */
+    klines(symbol, interval, limit) {
+      return j('binance', `${B}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`).then(rows =>
+        rows.map(r => ({
+          t: r[0], o: num(r[1]), h: num(r[2]), l: num(r[3]), c: num(r[4]),
+          quoteVol: num(r[7]), takerBuyQuote: num(r[10])
+        }))
+      );
+    },
+
+    /* ── 合约 ─────────────────────────────────────────────────── */
+    premiumIndex(symbol) {
+      return j('futures', `${F}/fapi/v1/premiumIndex?symbol=${symbol}`).then(d => ({
+        mark: num(d.markPrice), index: num(d.indexPrice),
+        fundingRate: num(d.lastFundingRate), nextFundingTime: d.nextFundingTime
+      }));
+    },
+    openInterest(symbol) {
+      return j('futures', `${F}/fapi/v1/openInterest?symbol=${symbol}`).then(d => ({ coins: num(d.openInterest), t: d.time }));
+    },
+    /* 币安衍生品统计接口只保留最近 30 天 */
+    openInterestHist(symbol, period, limit) {
+      return j('futures', `${F}/futures/data/openInterestHist?symbol=${symbol}&period=${period}&limit=${limit}`)
+        .then(rows => rows.map(r => ({ t: r.timestamp, coins: num(r.sumOpenInterest), usd: num(r.sumOpenInterestValue) })));
+    },
+    fundingHistory(symbol, limit) {
+      return j('futures', `${F}/fapi/v1/fundingRate?symbol=${symbol}&limit=${limit}`)
+        .then(rows => rows.map(r => ({ t: r.fundingTime, rate: num(r.fundingRate) })));
+    },
+    longShort(symbol, period, limit) {
+      return j('futures', `${F}/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=${period}&limit=${limit}`)
+        .then(rows => rows.map(r => ({ t: r.timestamp, ratio: num(r.longShortRatio), long: num(r.longAccount) })));
+    },
+    topTraderPosition(symbol, period, limit) {
+      return j('futures', `${F}/futures/data/topLongShortPositionRatio?symbol=${symbol}&period=${period}&limit=${limit}`)
+        .then(rows => rows.map(r => ({ t: r.timestamp, ratio: num(r.longShortRatio) })));
+    },
+    takerRatio(symbol, period, limit) {
+      return j('futures', `${F}/futures/data/takerlongshortRatio?symbol=${symbol}&period=${period}&limit=${limit}`)
+        .then(rows => rows.map(r => ({ t: r.timestamp, ratio: num(r.buySellRatio), buy: num(r.buyVol), sell: num(r.sellVol) })));
+    },
+
+    /* ── Coinbase（美国资金买盘的观察窗口） ───────────────────── */
+    coinbase(product) {
+      return j('coinbase', `https://api.exchange.coinbase.com/products/${product}/ticker`)
+        .then(d => ({ price: num(d.price), volume: num(d.volume) }));
+    },
+
+    /* ── 情绪 ─────────────────────────────────────────────────── */
+    fng(limit) {
+      return j('fng', `https://api.alternative.me/fng/?limit=${limit}`, 60000).then(d =>
+        d.data.map(x => ({ t: parseInt(x.timestamp, 10) * 1000, v: parseInt(x.value, 10), label: x.value_classification }))
+          .sort((a, b) => a.t - b.t)
+      );
+    },
+
+    /* ── CoinGecko（免费额度偏紧，统一 4 分钟缓存） ───────────── */
+    cgGlobal() {
+      return j('coingecko', `${CG}/global`, 240000).then(d => ({
+        mcap: d.data.total_market_cap.usd,
+        vol: d.data.total_volume.usd,
+        btcDom: d.data.market_cap_percentage.btc,
+        ethDom: d.data.market_cap_percentage.eth,
+        mcapChange24h: d.data.market_cap_change_percentage_24h_usd
+      }));
+    },
+    cgMarkets(ids) {
+      return j('coingecko', `${CG}/coins/markets?vs_currency=usd&ids=${ids.join(',')}&order=market_cap_desc&per_page=50&page=1`, 240000)
+        .then(rows => rows.map(c => ({ id: c.id, symbol: c.symbol, mcap: c.market_cap, price: c.current_price })));
+    },
+    cgChart(id, days) {
+      return j('coingecko', `${CG}/coins/${id}/market_chart?vs_currency=usd&days=${days}&interval=daily`, 240000)
+        .then(d => (d.market_caps || []).map(p => ({ t: p[0], v: p[1] })));
+    },
+
+    /* ── 贵金属现货 ───────────────────────────────────────────── */
+    metal(sym) {
+      return j('gold', `https://api.gold-api.com/price/${sym}`, 30000)
+        .then(d => ({ price: d.price, at: Date.parse(d.updatedAt) }));
+    },
+
+    /* ── 比特币网络基本面 ─────────────────────────────────────── */
+    hashrate() {
+      return j('mempool', 'https://mempool.space/api/v1/mining/hashrate/3m', 240000).then(d => ({
+        current: d.currentHashrate,
+        difficulty: d.currentDifficulty,
+        series: (d.hashrates || []).map(h => ({ t: h.timestamp * 1000, v: h.avgHashrate }))
+      }));
+    },
+
+    /* ── 汇率 → 合成美元指数 ──────────────────────────────────── */
+    fxLatest() {
+      return j('fx', 'https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR,JPY,GBP,CAD,SEK,CHF', 600000);
+    },
+    fxSeries(startISO) {
+      return j('fx', `https://api.frankfurter.dev/v1/${startISO}..?base=USD&symbols=EUR,JPY,GBP,CAD,SEK,CHF`, 600000);
+    },
+
+    /* ICE 官方权重下的美元指数公式。frankfurter 以 USD 为基准，
+       报价方向已在指数中折算，故六项权重同号相乘。 */
+    dxy(r) {
+      if (!r || !r.EUR) return null;
+      return 50.14348112
+        * Math.pow(r.EUR, 0.576)
+        * Math.pow(r.JPY, 0.136)
+        * Math.pow(r.GBP, 0.119)
+        * Math.pow(r.CAD, 0.091)
+        * Math.pow(r.SEK, 0.042)
+        * Math.pow(r.CHF, 0.036);
+    }
+  };
+
+  /* ══ WebSocket：BTC 与 PAXG 实时逐笔行情 ═══════════════════════ */
+  /* 不要写死 :9443 —— 部分网络只放行 443。两个官方主机轮换重连。 */
+  const WS_HOSTS = ['wss://stream.binance.com', 'wss://data-stream.binance.vision'];
+
+  function LiveTicker(symbols, onTick, onState) {
+    let ws = null, retry = 0, host = 0, closed = false, hb = null, watchdog = null, lastMsg = 0;
+
+    function connect() {
+      if (closed) return;
+      clearTimeout(hb);
+      const streams = symbols.map(s => s.toLowerCase() + '@ticker').join('/');
+      onState('connecting');
+      try {
+        ws = new WebSocket(`${WS_HOSTS[host % WS_HOSTS.length]}/stream?streams=${streams}`);
+      } catch (e) { host++; schedule(); return; }
+
+      // 握手迟迟不完成时换主机重试
+      const openTimer = setTimeout(() => {
+        if (ws && ws.readyState === 0) { host++; try { ws.close(); } catch (e) {} }
+      }, 8000);
+
+      ws.onopen = () => { clearTimeout(openTimer); retry = 0; lastMsg = Date.now(); onState('live'); };
+      ws.onmessage = ev => {
+        lastMsg = Date.now();
+        try {
+          const m = JSON.parse(ev.data);
+          const d = m.data;
+          if (!d || !d.s) return;
+          onTick(d.s, {
+            last: parseFloat(d.c), open: parseFloat(d.o),
+            high: parseFloat(d.h), low: parseFloat(d.l),
+            changePct: parseFloat(d.P), quoteVol: parseFloat(d.q), t: d.E
+          });
+        } catch (e) { /* 单帧解析失败不影响连接 */ }
+      };
+      ws.onerror = () => { onState('down'); };
+      ws.onclose = () => { clearTimeout(openTimer); if (!closed) { onState('down'); schedule(); } };
+    }
+
+    function schedule() {
+      retry++;
+      const wait = Math.min(30000, 1000 * Math.pow(1.7, retry));
+      clearTimeout(hb);
+      hb = setTimeout(connect, wait);
+    }
+
+    connect();
+
+    // 连上但静默超过 45 秒（行情流每秒推送）视为假连接，强制重连
+    watchdog = setInterval(() => {
+      if (closed || document.hidden) return;
+      if (ws && ws.readyState === 1 && lastMsg && Date.now() - lastMsg > 45000) {
+        host++; try { ws.close(); } catch (e) {}
+      }
+    }, 15000);
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && ws && ws.readyState > 1) { retry = 0; connect(); }
+    });
+
+    return { close() { closed = true; clearTimeout(hb); clearInterval(watchdog); if (ws) ws.close(); } };
+  }
+
+  global.API = API;
+  global.LiveTicker = LiveTicker;
+})(window);
+
+</script>
+<script>
+/* ══════════════════════════════════════════════════════════════════════
+   app.js — 看板编排：取数 → 计算派生指标 → 渲染 → 定时刷新
+   ══════════════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+
+  const F = Chart.Fmt;
+  const $  = s => document.querySelector(s);
+  const $$ = s => Array.from(document.querySelectorAll(s));
+  const fld = n => document.querySelector(`[data-f="${n}"]`);
+  const chartBox = n => document.querySelector(`[data-chart="${n}"]`);
+  const sparkBox = n => document.querySelector(`[data-spark="${n}"]`);
+  const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+  const S = {
+    days: 30,
+    btc: null, gold: null, silver: null, paxg: null,
+    btcDaily: [], goldDaily: [],
+    oiUsd: null, nextFunding: null, fundingRate: null
+  };
+
+  /* ── DOM 写入小工具 ──────────────────────────────────────────── */
+  function set(name, text, stale) {
+    const e = fld(name);
+    if (!e) return;
+    if (e.textContent !== text) e.textContent = text;
+    e.classList.toggle('is-stale', !!stale);
+  }
+
+  function flash(name, dir) {
+    const e = fld(name);
+    if (!e) return;
+    e.classList.remove('flash-up', 'flash-down');
+    void e.offsetWidth;
+    e.classList.add(dir > 0 ? 'flash-up' : 'flash-down');
+  }
+
+  /* 涨跌永远「图标 + 文字 + 颜色」三重编码，颜色不单独承担含义 */
+  function setDelta(name, pct, sub) {
+    const e = fld(name);
+    if (!e) return;
+    if (pct == null || !isFinite(pct)) { e.textContent = '—'; e.dataset.dir = 'flat'; return; }
+    const dir = pct > 0.001 ? 'up' : pct < -0.001 ? 'down' : 'flat';
+    e.dataset.dir = dir;
+    e.innerHTML = `<span class="arrow">${dir === 'up' ? '▲' : dir === 'down' ? '▼' : '■'}</span>` +
+                  `<span>${F.pct(pct)}</span>` +
+                  (sub ? `<span class="sub">${sub}</span>` : '');
+  }
+
+  function setChip(name, text, tone, icon) {
+    const e = fld(name);
+    if (!e) return;
+    e.innerHTML = `<span class="chip" data-tone="${tone || 'neutral'}">${icon ? icon + ' ' : ''}${text}</span>`;
+  }
+
+  async function guard(label, fn) {
+    try { return await fn(); }
+    catch (e) { console.warn('[' + label + ']', e.message || e); return null; }
+  }
+
+  /* localStorage 在 file:// 打开、隐私模式或禁用存储时会直接抛异常。
+     主题偏好是可选功能，绝不能因为它读不到就让整页初始化失败。 */
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 本次会话内仍生效 */ } }
+  };
+
+  /* ── 统计计算 ────────────────────────────────────────────────── */
+  function returns(closes) {
+    const r = [];
+    for (let i = 1; i < closes.length; i++) r.push(Math.log(closes[i] / closes[i - 1]));
+    return r;
+  }
+  function stdev(a) {
+    if (a.length < 2) return NaN;
+    const m = a.reduce((s, v) => s + v, 0) / a.length;
+    return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / (a.length - 1));
+  }
+  /* 年化已实现波动率：日对数收益率标准差 × √365（两种资产都按连续报价处理） */
+  function rollingVol(closes, win) {
+    const r = returns(closes), out = [];
+    for (let i = win - 1; i < r.length; i++) out.push(stdev(r.slice(i - win + 1, i + 1)) * Math.sqrt(365) * 100);
+    return out;                                    // 对齐 closes 的第 win 个元素起
+  }
+  function pearson(a, b) {
+    const n = Math.min(a.length, b.length);
+    if (n < 3) return NaN;
+    const x = a.slice(-n), y = b.slice(-n);
+    const mx = x.reduce((s, v) => s + v, 0) / n, my = y.reduce((s, v) => s + v, 0) / n;
+    let sxy = 0, sxx = 0, syy = 0;
+    for (let i = 0; i < n; i++) { const dx = x[i] - mx, dy = y[i] - my; sxy += dx * dy; sxx += dx * dx; syy += dy * dy; }
+    return sxy / Math.sqrt(sxx * syy);
+  }
+  /* 按时间戳对齐两条日线序列 */
+  function align(a, b) {
+    const m = new Map(b.map(k => [k.t, k]));
+    const out = [];
+    a.forEach(k => { const o = m.get(k.t); if (o) out.push([k, o]); });
+    return out;
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     核心行情
+     ══════════════════════════════════════════════════════════════ */
+  let lastBtcPrice = null;
+
+  function renderBtc(t) {
+    if (!t) return;
+    S.btc = t;
+    if (lastBtcPrice != null && t.last !== lastBtcPrice) flash('btc.price', t.last - lastBtcPrice);
+    lastBtcPrice = t.last;
+    set('btc.price', F.usd(t.last, 2));
+    setDelta('btc.delta', t.changePct, '24 小时');
+    if (t.high && t.low) set('btc.range', `24h 区间 ${F.usd(t.low, 0)} – ${F.usd(t.high, 0)}　成交额 ${F.big(t.quoteVol, ' 美元')}`);
+    renderRatio();
+  }
+
+  function renderGold() {
+    if (!S.gold) return;
+    set('gold.price', F.usd(S.gold.price, 2));
+    if (S.paxg) {
+      setDelta('gold.delta', S.paxg.changePct, '24 小时');
+      set('gold.range', `24h 区间 ${F.usd(S.paxg.low, 0)} – ${F.usd(S.paxg.high, 0)}　涨跌以 PAXG 连续报价计`);
+    }
+    renderRatio();
+  }
+
+  function renderRatio() {
+    if (!S.btc || !S.gold) return;
+    const r = S.btc.last / S.gold.price;
+    set('ratio.value', F.num(r, 2) + ' oz');
+    // 24 小时前的比价：用两者各自的 24h 开盘价还原
+    if (S.btc.open && S.paxg && S.paxg.open) {
+      const r0 = S.btc.open / S.paxg.open;
+      setDelta('ratio.delta', (r / r0 - 1) * 100, '24 小时');
+    }
+  }
+
+  function renderSilver() {
+    if (!S.gold || !S.silver) return;
+    const gsr = S.gold.price / S.silver.price;
+    set('gsr.value', F.num(gsr, 1));
+    let tone = 'neutral', txt = '中性区间';
+    if (gsr >= 90)      { tone = 'critical'; txt = '避险情绪浓厚'; }
+    else if (gsr >= 80) { tone = 'serious';  txt = '偏避险'; }
+    else if (gsr < 65)  { tone = 'good';     txt = '风险偏好回升'; }
+    setChip('gsr.tag', `${txt}　白银 ${F.usd(S.silver.price, 2)}/oz`, tone);
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     资金流入
+     ══════════════════════════════════════════════════════════════ */
+  async function refreshPremiums() {
+    const [cb, bn] = await Promise.all([
+      guard('coinbase', () => API.coinbase('BTC-USD')),
+      guard('binance-btc', () => API.ticker24('BTCUSDT'))
+    ]);
+    if (cb && bn) {
+      const bp = (cb.price - bn.last) / bn.last * 10000;
+      set('cbp.value', F.bps(bp));
+      let tone = 'neutral', txt = '两地基本持平';
+      if (bp > 5)       { tone = 'good';     txt = '美国买盘偏强'; }
+      else if (bp > 1)  { tone = 'neutral';  txt = '美国小幅溢价'; }
+      else if (bp < -5) { tone = 'critical'; txt = '美国抛压偏强'; }
+      else if (bp < -1) { tone = 'neutral';  txt = '美国小幅折价'; }
+      setChip('cbp.tag', txt, tone);
+    }
+    const px = await guard('paxg', () => API.ticker24('PAXGUSDT'));
+    if (px) { S.paxg = px; renderGold(); renderPaxgPremium(); }
+  }
+
+  /* 代币化黄金溢价需要「黄金现货」与「PAXG」两路数据，任一路到达都重算一次 */
+  function renderPaxgPremium() {
+    if (!S.paxg || !S.gold) return;
+    const pp = (S.paxg.last - S.gold.price) / S.gold.price * 10000;
+    set('paxg.value', F.bps(pp));
+    const tone = pp > 30 ? 'good' : pp < -30 ? 'serious' : 'neutral';
+    setChip('paxg.tag', pp >= 0 ? '链上溢价交易' : '链上折价交易', tone);
+  }
+
+  async function refreshOI() {
+    const [oi, pi] = await Promise.all([
+      guard('oi', () => API.openInterest('BTCUSDT')),
+      guard('premium', () => API.premiumIndex('BTCUSDT'))
+    ]);
+    if (oi && pi) {
+      const usd = oi.coins * pi.mark;
+      S.oiUsd = usd;
+      set('oi.value', F.big(usd, ' 美元'));
+      set('oi.coins', `${F.num(oi.coins, 0)} 枚 BTC 名义持仓（Binance USDT 永续）`);
+    }
+    if (pi) {
+      S.fundingRate = pi.fundingRate;
+      S.nextFunding = pi.nextFundingTime;
+      const ann = pi.fundingRate * 3 * 365 * 100;
+      set('funding.value', F.pct(ann, 2));
+      let tone = 'neutral', txt = '多空成本均衡';
+      if (ann > 30)       { tone = 'critical'; txt = '多头过热，杠杆成本高'; }
+      else if (ann > 11)  { tone = 'warning';  txt = '多头情绪偏强'; }
+      else if (ann < -11) { tone = 'good';     txt = '空头拥挤，常见于底部'; }
+      setChip('funding.tag', txt, tone);
+      tickCountdown();
+    }
+  }
+
+  function tickCountdown() {
+    if (!S.nextFunding) return;
+    const ms = S.nextFunding - Date.now();
+    if (ms < 0) { set('funding.next', '等待结算…'); return; }
+    const h = Math.floor(ms / 3600000), m = Math.floor(ms % 3600000 / 60000), s = Math.floor(ms % 60000 / 1000);
+    set('funding.next', `距下次结算 ${h}小时${String(m).padStart(2, '0')}分${String(s).padStart(2, '0')}秒　当期费率 ${(S.fundingRate * 100).toFixed(4)}%`);
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     市场信心 / 宏观
+     ══════════════════════════════════════════════════════════════ */
+  async function refreshMacroSlow() {
+    const [g, stables, hash] = await Promise.all([
+      guard('cg-global', () => API.cgGlobal()),
+      guard('cg-stables', () => API.cgMarkets(['tether', 'usd-coin', 'dai', 'ethena-usde'])),
+      guard('hashrate', () => API.hashrate())
+    ]);
+
+    if (g) {
+      set('mcap.value', F.big(g.mcap, ' 美元'));
+      setDelta('mcap.delta', g.mcapChange24h, '24 小时');
+      set('mcap.vol', `24 小时成交额 ${F.big(g.vol, ' 美元')}`);
+      set('dom.value', F.pctAbs(g.btcDom, 1));
+      setChip('dom.tag', `以太坊占比 ${F.pctAbs(g.ethDom, 1)}`, 'neutral');
+    }
+    if (stables && stables.length) {
+      const total = stables.reduce((s, c) => s + (c.mcap || 0), 0);
+      set('stable.total', F.big(total, ' 美元'));
+      S.stableNow = total;
+    }
+    if (hash && hash.current) {
+      const eh = hash.current / 1e18;
+      set('hash.value', F.num(eh, 0) + ' EH/s');
+      const ser = hash.series || [];
+      if (ser.length > 30) {
+        const prev = ser[ser.length - 31].v;
+        setDelta('hash.delta', (hash.current / prev - 1) * 100, '近 30 天');
+      }
+    }
+  }
+
+  async function refreshSentiment() {
+    const [ls, tl] = await Promise.all([
+      guard('lsr', () => API.longShort('BTCUSDT', '1h', 2)),
+      guard('tlsr', () => API.topTraderPosition('BTCUSDT', '1h', 2))
+    ]);
+    if (tl && tl.length) {
+      const r = tl[tl.length - 1].ratio;
+      set('tlsr.value', F.num(r, 2));
+      const tone = r >= 1.6 ? 'warning' : r >= 1.05 ? 'good' : r <= 0.7 ? 'critical' : 'neutral';
+      const txt = r >= 1.6 ? '大户重仓做多，注意拥挤' : r >= 1.05 ? '大户偏多' : r <= 0.7 ? '大户偏空' : '大户方向分歧';
+      setChip('tlsr.tag', txt, tone);
+    }
+    return ls;
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     历史序列与图表
+     ══════════════════════════════════════════════════════════════ */
+  const VOL_WIN = 30;
+
+  /* 币安衍生品统计接口只保留最近 30 天，按区间挑选粒度 */
+  function derivGrain(days) {
+    if (days <= 7) return { period: '1h', limit: 168, xFmt: F.dayHour, capped: false };
+    return { period: '4h', limit: 180, xFmt: F.day, capped: days > 30 };
+  }
+  const CAP_NOTE = '币安衍生品统计接口仅保留最近 30 天，此图已截断至 30 天';
+
+  async function loadHistory() {
+    const days = S.days;
+    const need = days + VOL_WIN + 2;               // 波动率需要额外 30 天预热
+
+    const [bk, gk] = await Promise.all([
+      guard('klines-btc',  () => API.klines('BTCUSDT',  '1d', Math.min(1000, need))),
+      guard('klines-paxg', () => API.klines('PAXGUSDT', '1d', Math.min(1000, need)))
+    ]);
+
+    if (bk && bk.length) {
+      S.btcDaily = bk;
+      Chart.spark(sparkBox('btc'), { points: bk.slice(-days).map(k => [k.t, k.c]), color: cssVar('--series-btc') });
+    }
+    if (gk && gk.length) {
+      S.goldDaily = gk;
+      Chart.spark(sparkBox('gold'), { points: gk.slice(-days).map(k => [k.t, k.c]), color: cssVar('--series-gold') });
+    }
+
+    if (bk && gk) {
+      const pairs = align(bk, gk);
+      renderPerf(pairs, days);
+      renderRatioHist(pairs, days);
+      renderVol(pairs, days);
+      renderCorr(pairs);
+    }
+
+    loadFlowCharts(days);
+    loadSentimentCharts(days);
+    loadDxy(days);
+  }
+
+  function renderPerf(pairs, days) {
+    const win = pairs.slice(-days);
+    if (win.length < 2) return;
+    const b0 = win[0][0].c, g0 = win[0][1].c;
+    Chart.line(chartBox('perf'), {
+      series: [
+        { name: '比特币', color: cssVar('--series-btc'),  points: win.map(([b]) => [b.t, b.c / b0 * 100]) },
+        { name: '黄金',   color: cssVar('--series-gold'), points: win.map(([, g]) => [g.t, g.c / g0 * 100]) }
+      ],
+      baseline: 100,
+      yFormat: v => F.num(v, 0),
+      tipFormat: v => F.num(v, 1) + `（${v >= 100 ? '+' : ''}${(v - 100).toFixed(1)}%）`,
+      xFormat: F.day,
+      note: `区间起点 ${F.day(win[0][0].t)} 归一化为 100；虚线为起点基准`
+    });
+  }
+
+  function renderRatioHist(pairs, days) {
+    const win = pairs.slice(-days);
+    Chart.line(chartBox('ratioHist'), {
+      series: [{ name: 'BTC / 黄金（盎司）', color: cssVar('--seq-1'), points: win.map(([b, g]) => [b.t, b.c / g.c]) }],
+      yFormat: v => F.num(v, 1),
+      tipFormat: v => F.num(v, 2) + ' oz',
+      xFormat: F.day
+    });
+  }
+
+  function renderVol(pairs, days) {
+    const bc = pairs.map(([b]) => b.c), gc = pairs.map(([, g]) => g.c);
+    const bv = rollingVol(bc, VOL_WIN), gv = rollingVol(gc, VOL_WIN);
+    const ts = pairs.slice(VOL_WIN).map(([b]) => b.t);
+    const n = Math.min(days, bv.length);
+    const tsC = ts.slice(-n), bvC = bv.slice(-n), gvC = gv.slice(-n);
+
+    if (bv.length) {
+      set('vol.btc',  F.pctAbs(bv[bv.length - 1], 1));
+      set('vol.gold', F.pctAbs(gv[gv.length - 1], 1));
+      set('vol.mult', F.num(bv[bv.length - 1] / gv[gv.length - 1], 1) + ' 倍');
+    }
+
+    Chart.line(chartBox('vol'), {
+      series: [
+        { name: '比特币', color: cssVar('--series-btc'),  points: tsC.map((t, i) => [t, bvC[i]]) },
+        { name: '黄金',   color: cssVar('--series-gold'), points: tsC.map((t, i) => [t, gvC[i]]) }
+      ],
+      yFormat: v => v.toFixed(0) + '%',
+      tipFormat: v => F.pctAbs(v, 1),
+      xFormat: F.day
+    });
+  }
+
+  function renderCorr(pairs) {
+    const rb = returns(pairs.map(([b]) => b.c)).slice(-30);
+    const rg = returns(pairs.map(([, g]) => g.c)).slice(-30);
+    const r = pearson(rb, rg);
+    if (!isFinite(r)) return;
+    set('corr.value', F.num(r, 2));
+    const a = Math.abs(r);
+    const tone = a < 0.2 ? 'good' : a < 0.5 ? 'neutral' : 'warning';
+    const txt = a < 0.2 ? '几乎不相关，分散效果好'
+              : a < 0.5 ? (r > 0 ? '弱正相关' : '弱负相关')
+              : (r > 0 ? '同涨同跌，分散效果减弱' : '明显反向');
+    setChip('corr.tag', `${txt}　近 30 日`, tone);
+  }
+
+  async function loadFlowCharts(days) {
+    const gr = derivGrain(days);
+
+    /* 未平仓合约 */
+    const oih = await guard('oi-hist', () => API.openInterestHist('BTCUSDT', gr.period, gr.limit));
+    if (oih && oih.length) {
+      Chart.line(chartBox('oi'), {
+        series: [{ name: '未平仓名义金额', color: cssVar('--seq-1'), points: oih.map(d => [d.t, d.usd]) }],
+        yFormat: v => (v / 1e8).toFixed(0) + ' 亿',
+        tipFormat: v => F.big(v, ' 美元'),
+        xFormat: gr.xFmt, tipTitle: F.dayHour,
+        note: gr.capped ? CAP_NOTE : null
+      });
+      const last = oih[oih.length - 1].usd;
+      const dayAgo = oih[Math.max(0, oih.length - 1 - (gr.period === '1h' ? 24 : 6))].usd;
+      setDelta('oi.delta', (last / dayAgo - 1) * 100, '24 小时');
+    } else {
+      Chart.empty(chartBox('oi'), '未平仓合约数据暂不可用');
+    }
+
+    /* 主动买卖量比：固定看最近 48 小时，这是一个短周期买压指标 */
+    const tk = await guard('taker', () => API.takerRatio('BTCUSDT', '1h', 48));
+    if (tk && tk.length) {
+      Chart.bars(chartBox('taker'), {
+        points: tk.map(d => [d.t, d.ratio]),
+        baseline: 1,
+        seriesName: '买卖量比',
+        yFormat: v => F.num(v, 2),
+        tipFormat: v => F.num(v, 3),
+        xFormat: F.dayHour, tipTitle: F.dayHour, maxTicks: 3, tickWidth: 96,
+        note: '固定展示最近 48 小时；基准线 1.00 代表买卖力量均衡'
+      });
+    } else {
+      Chart.empty(chartBox('taker'), '主动买卖数据暂不可用');
+    }
+
+    /* 稳定币总市值走势 */
+    const [ut, uc] = await Promise.all([
+      guard('cg-usdt', () => API.cgChart('tether', Math.max(days, 14))),
+      guard('cg-usdc', () => API.cgChart('usd-coin', Math.max(days, 14)))
+    ]);
+    if (ut && uc && ut.length) {
+      const m = new Map(uc.map(p => [new Date(p.t).toDateString(), p.v]));
+      const pts = ut.map(p => [p.t, p.v + (m.get(new Date(p.t).toDateString()) || 0)]).filter(p => isFinite(p[1]));
+      Chart.line(chartBox('stable'), {
+        series: [{ name: 'USDT + USDC 总市值', color: cssVar('--seq-1'), points: pts }],
+        yFormat: v => (v / 1e8).toFixed(0) + ' 亿',
+        tipFormat: v => F.big(v, ' 美元'),
+        xFormat: F.day
+      });
+      if (pts.length > 1) {
+        const d = pts[pts.length - 1][1] - pts[0][1];
+        setDelta('stable.delta', d / pts[0][1] * 100,
+          `近 ${pts.length - 1} 天净${d >= 0 ? '增' : '减'} ${F.big(Math.abs(d), ' 美元')}（仅 USDT+USDC）`);
+      }
+    } else {
+      Chart.empty(chartBox('stable'), '稳定币数据暂不可用（CoinGecko 免费额度受限，稍后自动重试）');
+    }
+  }
+
+  async function loadSentimentCharts(days) {
+    const gr = derivGrain(days);
+
+    /* 恐惧贪婪指数 */
+    const fng = await guard('fng', () => API.fng(Math.max(days, 31)));
+    if (fng && fng.length) {
+      const cur = fng[fng.length - 1];
+      Chart.gauge(chartBox('fngGauge'), { value: cur.v, label: zhFng(cur.label) });
+      const pick = n => fng[fng.length - 1 - n];
+      const cell = (lab, x) => `${lab} <b>${x ? x.v : '—'}</b>`;
+      const y = pick(1), w = pick(7), mth = pick(30);
+      fld('fng.yesterday').innerHTML = cell('昨日', y);
+      fld('fng.week').innerHTML = cell('上周', w);
+      fld('fng.month').innerHTML = cell('上月', mth);
+      Chart.line(chartBox('fngHist'), {
+        series: [{ name: '恐惧贪婪指数', color: cssVar('--seq-1'), points: fng.slice(-days).map(d => [d.t, d.v]) }],
+        band: { from: 45, to: 55 },
+        yFormat: v => v.toFixed(0),
+        tipFormat: v => `${v.toFixed(0)}　${zhFng(bucket(v))}`,
+        xFormat: F.day
+      });
+    } else {
+      Chart.empty(chartBox('fngHist'), '恐惧贪婪指数暂不可用');
+    }
+
+    /* 资金费率历史（每 8 小时一次结算） */
+    const fh = await guard('funding-hist', () => API.fundingHistory('BTCUSDT', Math.min(1000, days * 3)));
+    if (fh && fh.length) {
+      Chart.bars(chartBox('funding'), {
+        points: fh.map(d => [d.t, d.rate * 3 * 365 * 100]),
+        baseline: 0,
+        seriesName: '年化资金费率',
+        yFormat: v => v.toFixed(0) + '%',
+        tipFormat: v => F.pct(v, 2),
+        xFormat: F.day, tipTitle: F.dayHour,
+        note: '正值＝多头向空头支付；长期基准约在 +11%（每期 0.01%）附近'
+      });
+    } else {
+      Chart.empty(chartBox('funding'), '资金费率历史暂不可用');
+    }
+
+    /* 全网多空账户比 */
+    const ls = await guard('lsr-hist', () => API.longShort('BTCUSDT', gr.period, gr.limit));
+    if (ls && ls.length) {
+      Chart.line(chartBox('lsr'), {
+        series: [{ name: '多空账户比', color: cssVar('--seq-1'), points: ls.map(d => [d.t, d.ratio]) }],
+        baseline: 1,
+        yFormat: v => F.num(v, 2),
+        xFormat: gr.xFmt, tipTitle: F.dayHour,
+        note: gr.capped ? CAP_NOTE : '基准线 1.00＝多空账户数持平'
+      });
+    } else {
+      Chart.empty(chartBox('lsr'), '多空比数据暂不可用');
+    }
+  }
+
+  function bucket(v) {
+    return v <= 24 ? 'Extreme Fear' : v <= 44 ? 'Fear' : v <= 55 ? 'Neutral' : v <= 74 ? 'Greed' : 'Extreme Greed';
+  }
+  function zhFng(label) {
+    return ({
+      'Extreme Fear': '极度恐惧', 'Fear': '恐惧', 'Neutral': '中性',
+      'Greed': '贪婪', 'Extreme Greed': '极度贪婪'
+    })[label] || label || '';
+  }
+
+  async function loadDxy(days) {
+    const start = new Date(Date.now() - (days + 5) * 86400000).toISOString().slice(0, 10);
+    const d = await guard('fx-series', () => API.fxSeries(start));
+    if (!d || !d.rates) { Chart.empty(chartBox('dxy'), '汇率数据暂不可用'); return; }
+    const pts = Object.keys(d.rates).sort().map(k => [Date.parse(k + 'T00:00:00Z'), API.dxy(d.rates[k])]).filter(p => p[1]);
+    if (!pts.length) { Chart.empty(chartBox('dxy'), '汇率数据暂不可用'); return; }
+    Chart.line(chartBox('dxy'), {
+      series: [{ name: '美元指数 DXY', color: cssVar('--seq-1'), points: pts }],
+      yFormat: v => F.num(v, 1),
+      tipFormat: v => F.num(v, 2),
+      xFormat: F.day,
+      note: '欧洲央行日终汇率，每个交易日更新一次，不含周末'
+    });
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     数据源状态
+     ══════════════════════════════════════════════════════════════ */
+  function renderStatus() {
+    const grid = $('#statusGrid');
+    const items = Object.values(API.SOURCES);
+    if (grid.children.length !== items.length) {
+      grid.innerHTML = items.map(s =>
+        `<div class="status-item" data-key="${s.key}"><span class="dot"></span><span class="name">${s.name}</span><span class="age">—</span></div>`
+      ).join('');
+    }
+    items.forEach(s => {
+      const n = grid.querySelector(`[data-key="${s.key}"]`);
+      if (!n) return;
+      n.dataset.ok = s.ok == null ? '' : (s.ok ? '1' : '0');
+      n.querySelector('.age').textContent = s.ok === false ? (s.err || '失败') : F.age(s.at);
+    });
+  }
+
+  function setLive(state) {
+    const box = $('#liveStatus');
+    box.querySelector('.live-dot').dataset.state = state;
+    box.querySelector('.live-text').textContent =
+      state === 'live' ? '实时行情已连接' : state === 'connecting' ? '连接中…' : '连接中断，重试中';
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     刷新调度
+     ══════════════════════════════════════════════════════════════ */
+  const timers = [];
+  /* 页面不可见时暂停网络请求以节省额度；纯 DOM 更新（状态栏、倒计时）不受影响 */
+  function every(ms, fn, opt) {
+    const o = opt || {};
+    if (o.immediate !== false) fn();
+    timers.push(setInterval(() => { if (o.runHidden || !document.hidden) fn(); }, ms));
+  }
+
+  async function refreshMetals() {
+    const [au, ag] = await Promise.all([
+      guard('xau', () => API.metal('XAU')),
+      guard('xag', () => API.metal('XAG'))
+    ]);
+    if (au) { S.gold = au; renderGold(); renderPaxgPremium(); }
+    if (ag) { S.silver = ag; renderSilver(); }
+  }
+
+  function boot() {
+    /* 主题 */
+    const saved = store.get('theme');
+    if (saved) document.documentElement.dataset.theme = saved;
+    $('#themeToggle').addEventListener('click', () => {
+      const cur = document.documentElement.dataset.theme;
+      const isDark = cur ? cur === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+      const next = isDark ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      store.set('theme', next);
+      requestAnimationFrame(() => Chart.redrawAll());
+    });
+
+    /* 数据表开关 */
+    $('#tableToggle').addEventListener('click', e => {
+      const on = document.body.classList.toggle('show-tables');
+      e.currentTarget.setAttribute('aria-pressed', String(on));
+    });
+
+    /* 区间切换 */
+    $$('#rangeCtl button').forEach(b => b.addEventListener('click', () => {
+      $$('#rangeCtl button').forEach(x => x.classList.remove('is-on'));
+      b.classList.add('is-on');
+      S.days = parseInt(b.dataset.days, 10);
+      loadHistory();
+    }));
+
+    /* 实时行情 WebSocket；同时用一次 REST 兜底首屏 */
+    setLive('connecting');
+    LiveTicker(['BTCUSDT', 'PAXGUSDT'], (sym, t) => {
+      if (sym === 'BTCUSDT') renderBtc(t);
+      else if (sym === 'PAXGUSDT') { S.paxg = t; renderGold(); }
+    }, setLive);
+    guard('btc-rest', () => API.ticker24('BTCUSDT')).then(t => { if (t && !S.btc) renderBtc(t); });
+
+    /* 分层轮询 */
+    every(10000,  refreshPremiums);
+    every(30000,  refreshOI);
+    every(60000,  refreshMetals);
+    every(60000,  refreshSentiment);
+    every(300000, refreshMacroSlow);
+    every(1000,   tickCountdown, { immediate: false, runHidden: true });
+    every(5000,   renderStatus,  { runHidden: true });
+
+    let lastHistory = Date.now();
+    loadHistory();
+    setInterval(() => {
+      if (document.hidden) return;
+      lastHistory = Date.now();
+      loadHistory();
+    }, 600000);
+
+    /* 回到前台补齐所有轮询，历史图表超过 10 分钟未算则一并重算 */
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      refreshPremiums(); refreshOI(); refreshMetals();
+      refreshSentiment(); refreshMacroSlow();
+      if (Date.now() - lastHistory > 600000) { lastHistory = Date.now(); loadHistory(); }
+    });
+
+    /* 系统主题变化时重绘（颜色取自 CSS 变量） */
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (!document.documentElement.dataset.theme) requestAnimationFrame(() => Chart.redrawAll());
+    });
+  }
+
+  function safeBoot() {
+    try { boot(); }
+    catch (e) {
+      console.error('初始化失败', e);
+      const b = document.querySelector('#liveStatus .live-text');
+      if (b) b.textContent = '初始化失败：' + (e.message || e);
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', safeBoot);
+  else safeBoot();
+})();
+
+</script>
+</body>
+</html>
